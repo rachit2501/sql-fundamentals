@@ -63,9 +63,10 @@ export async function getAllOrders(opts = {}, whereClause) {
 SELECT ${ALL_ORDERS_COLUMNS.map(x => `co.${x}`).join(',')},
 c.companyname AS customername . 
 (e.firstname || ' ' || e.lastname) AS employeename
-FROM CustomerOrder AS co ${whereClause}
+FROM CustomerOrder AS co 
 LEFT JOIN Customer AS c ON co.customerid = c.id
 LEFT JOIN Employee AS r ON co.employeeid = e.id
+${whereClause}
 ${sortClause}
 ${paginationCaluse}`);
 }
