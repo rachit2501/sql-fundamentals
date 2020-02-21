@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { getDb } from '../db/utils';
 import { sql } from '../sql-string';
 
@@ -59,8 +60,12 @@ export async function getAllOrders(opts = {}, whereClause) {
     paginationCaluse = sql`LIMIT ${options.perPage} OFFSET ${(options.page - 1) * options.perPage}`;
   }
   return await db.all(sql`
-SELECT ${ALL_ORDERS_COLUMNS.join(',')}
-FROM CustomerOrder
+SELECT ${ALL_ORDERS_COLUMNS.map(x => `co.${x}`).join(',')},
+c.companyname AS customername . 
+(e.firstname || ' ' || e.lastname) AS employeename
+FROM CustomerOrder AS co ${whereClause}
+LEFT JOIN Customer AS c ON co.customerid = c.id
+LEFT JOIN Employee AS r ON co.employeeid = e.id
 ${sortClause}
 ${paginationCaluse}`);
 }
@@ -72,11 +77,12 @@ ${paginationCaluse}`);
  */
 export async function getCustomerOrders(customerId, opts = {}) {
   // ! This is going to retrieve ALL ORDERS, not just the ones that belong to a particular customer. We'll need to fix this
- let options = {
-   {sort : 'shippeddate' , order : 'asc'}.
-   ...opts
- }
-  return getAllOrders(opts, sql`WHERE customerid=${customerId}`);
+  let options = {
+    ...{ page: 1, perPage: 20, sort: 'shippeddate', order: 'asc' },
+    ...opts
+  };
+  // @ts-ignore
+  return getAllOrders(options, sql`WHERE customerid=${customerId}`);
 }
 
 /**
@@ -88,9 +94,16 @@ export async function getOrder(id) {
   const db = await getDb();
   return await db.get(
     sql`
-SELECT *
-FROM CustomerOrder
-WHERE id = $1`,
+SELECT o.*
+c.companyname AS customername, 
+e.lastname AS employeename
+sume((1-od.discount) * od.untiprice * od. quantity) AS subtotal
+FROM CustomerOrder AS co
+LEFT JOIN Customer AS c ON co.customerid = c.id
+LEFT JOIN Employee AS e ON co.employeeid = e.id
+LEFT JOIN OrderDetails AS od O    const db = await getDb();
+ON od.orderid=co.id
+WHERE co.id = $1`,
     id
   );
 }
@@ -105,8 +118,9 @@ export async function getOrderDetails(id) {
   return await db.all(
     sql`
 SELECT *, unitprice * quantity as price
-FROM OrderDetail
-WHERE orderid = $1`,
+FROM OrderDetail AS od
+LEFT JOIN Product AS p ON od.productid = p.id
+WHERE od.orderid = $1`,
     id
   );
 }
@@ -129,7 +143,48 @@ export async function getOrderWithDetails(id) {
  * @returns {Promise<{id: string}>} the newly created order
  */
 export async function createOrder(order, details = []) {
-  return Promise.reject('Orders#createOrder() NOT YET IMPLEMENTED');
+  const db = await getDb();
+  db.run('begin');
+  try{
+  let result = await db.run(sql`INSERT INTO CustomerOrder(
+    employeeid,
+    customerid,
+    shipcity,
+    shipaddress,
+    shipname,
+    shipvia,
+    shipregino,
+    shipcountry,
+    shippostalcode,
+    requireddate,
+    freight,
+  ) VALUES ($1 , $2 , $3, $4,$5 , $6 , $7 ,$8 ,$ 9 , $10 , $11)
+WHERE id=$1`);
+  if (!result || typeof result.lastID === 'undefined')
+    throw new Error('Order insertion did not return and id!');
+  let orderId = result.lastID;
+  let ct = 1;
+  await Promise.all(
+    details.map(details => {
+      return (
+        db.run(sql`INSERT INTO OrderDetails(id , orderid , unitprice , quantity , discount , productId)
+      VALUES($1, $2 , $3 , $4 , $5 , $6`),
+        `${orderId}/${ct++}`,
+        orderId,
+        details.unitprice,
+        details.discount,
+        details.quantity,
+        details.productid
+      );
+    })
+    
+  );
+  await db.run('COMMIT');
+  return {id:result.lastID}
+}
+catch(e){
+  await db.run('ROLLBACK;');
+  throw e;
 }
 
 /**
@@ -138,7 +193,8 @@ export async function createOrder(order, details = []) {
  * @returns {Promise<any>}
  */
 export async function deleteOrder(id) {
-  return Promise.reject('Orders#deleteOrder() NOT YET IMPLEMENTED');
+  const db = await getDb();
+  return await db.get(sql`DELETE FROM CustomerOrder WHERE id=$1`, id);
 }
 
 /**
