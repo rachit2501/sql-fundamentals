@@ -146,19 +146,18 @@ export async function createOrder(order, details = []) {
   const db = await getDb();
   db.run('begin');
   try{
-  let result = await db.run(sql`INSERT INTO CustomerOrder(
-    employeeid,
-    customerid,
-    shipcity,
-    shipaddress,
-    shipname,
-    shipvia,
-    shipregino,
-    shipcountry,
-    shippostalcode,
-    requireddate,
-    freight,
-  ) VALUES ($1 , $2 , $3, $4,$5 , $6 , $7 ,$8 ,$ 9 , $10 , $11)
+  let result = await db.run(sql`UPDATE CustomerOrder
+      SET employeeid=,
+      customerid,
+      shipcity,
+      shipaddress,
+      shipname,
+      shipvia,
+      shipregino,
+      shipcountry,
+      shippostalcode,
+      requireddate,
+      freight,VALUES ($1 , $2 , $3, $4,$5 , $6 , $7 ,$8 ,$ 9 , $10 , $11)
 WHERE id=$1`);
   if (!result || typeof result.lastID === 'undefined')
     throw new Error('Order insertion did not return and id!');
@@ -184,7 +183,7 @@ WHERE id=$1`);
 }
 catch(e){
   await db.run('ROLLBACK;');
-  throw e;
+  throw e; 
 }
 
 /**
@@ -205,5 +204,62 @@ export async function deleteOrder(id) {
  * @returns {Promise<Partial<Order>>} the order
  */
 export async function updateOrder(id, data, details = []) {
-  return Promise.reject('Orders#updateOrder() NOT YET IMPLEMENTED');
+  const db = await getDb();
+  db.run('begin');
+  try{
+  let result = await db.run(sql`UPDATE CustomerOrder
+      SET employeeid=$1,
+      customerid=$2,
+      shipcity=$3,
+      shipaddress=$4,
+      shipname=$5,
+      shipvia=$6,
+      shipregino=$7,
+      shipcountry=$8,
+      shippostalcode=$9,
+      requireddate=$10,
+      freight=$11,
+      WHERE id=$12`,
+      data.customerid,
+      data.employeeid,
+      data.shipcity,
+      data.shipaddress,
+      data.shipname,
+      data.shipvia,
+      data.shipregion,
+      data.shipcountry,
+      data.shippostalcode,
+      data.requireddate,
+      data.freight,
+      id);
+    if(!result || typeof result.lastID==='undefined')
+    throw new Eroor('Oder insertion did not return an id!');
+    let ct = 1;
+    let orderId = result.lastID;
+    await Promise.all(
+      details.map(detail => {
+        return db.run(
+          sql`UPDATE OrderDetail
+          SET orderid = $1,
+          unitprice = $2,
+          quantity = $3 ,
+          discount = $4,
+          productid = $5,
+          WHERE id= $6`,
+          orderId,
+          detail.unitprice,
+          detail.quantity,
+          detail.quantity,
+          detail.discount,
+          detail.productid,
+          detail.id
+        )}
+    ));
+    await db.run('COMMIT:');
+    return {id:result.lastID};
+  }
+  catch(e){
+    await db.run('ROLLBACK:');
+    throw e;
+  }
 }
